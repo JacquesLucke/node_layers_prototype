@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import StringProperty
+from bpy.props import StringProperty, EnumProperty
 
 def find_geometry_node_group(ob):
     for modifier in ob.modifiers:
@@ -37,7 +37,6 @@ class ModifierLayersPanel(bpy.types.Panel):
         props.group_name = node_group.name
         props.next_node_name = output_node.name
         props.next_socket_identifier = output_node.inputs[0].identifier
-        props.new_node_idname = "GeometryNodeSubdivisionSurface"
 
         final_output_socket = output_node.inputs[0]
         layer_column = layout.column(align=True)
@@ -74,9 +73,9 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
         del self.node_history[5:]
 
         for node_name in self.node_history:
-            box = layout.box()
             if (node := node_group.nodes.get(node_name)) is None:
                 continue
+            box = layout.box()
             box.label(text=f"Node: {node_name}")
             node.draw_buttons(context, box)
             for socket in node.inputs:
@@ -88,12 +87,24 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
 class AddNodeLayerOperator(bpy.types.Operator):
     bl_idname = "node_layers.add_node_layer"
     bl_label = "Add Node Layer"
+    bl_property = "item"
+
+    item: EnumProperty(items=[
+        ("GeometryNodeSubdivisionSurface", "Subdision Surface", ""),
+        ("GeometryNodeScaleElements", "Scale Elements", ""),
+        ("GeometryNodeSplitEdges", "Split Edges", ""),
+        ("GeometryNodeMeshCube", "Cube", ""),
+        ("GeometryNodeMeshCylinder", "Cylinder", ""),
+        ("GeometryNodeInstanceOnPoints", "Instance on Points", ""),
+    ])
 
     group_name: StringProperty()
     next_node_name: StringProperty()
     next_socket_identifier: StringProperty()
 
-    new_node_idname: StringProperty()
+    def invoke(self, context, event):
+        context.window_manager.invoke_search_popup(self)
+        return {'CANCELLED'}
 
     def execute(self, context):
         if (node_group := bpy.data.node_groups.get(self.group_name)) is None:
@@ -107,7 +118,9 @@ class AddNodeLayerOperator(bpy.types.Operator):
         else:
             return {'CANCELLED'}
 
-        new_node = node_group.nodes.new(self.new_node_idname)
+        new_node_idname = self.item
+
+        new_node = node_group.nodes.new(new_node_idname)
         new_node.location = next_node.location
         next_node.location.x += 200
 
@@ -122,10 +135,11 @@ class AddNodeLayerOperator(bpy.types.Operator):
                 break
         else:
             return {'CANCELLED'}
-        main_input = find_main_input(new_node, main_output)
 
-        for origin_socket in origin_sockets:
-            node_group.links.new(main_input, origin_socket)
+        main_input = find_main_input(new_node, main_output)
+        if main_input is not None:
+            for origin_socket in origin_sockets:
+                node_group.links.new(main_input, origin_socket)
         node_group.links.new(next_socket, main_output)
 
         for node in node_group.nodes:
