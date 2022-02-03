@@ -33,10 +33,20 @@ class ModifierLayersPanel(bpy.types.Panel):
         else:
             return
 
+
         props = layout.operator("node_layers.add_node_layer")
         props.group_name = node_group.name
         props.next_node_name = output_node.name
         props.next_socket_identifier = output_node.inputs[0].identifier
+        active_node = node_group.nodes.active
+        if active_node is not None:
+            if main_output := find_main_output(active_node):
+                for link in main_output.links:
+                    props.next_node_name = link.to_node.name
+                    props.next_socket_identifier = link.to_socket.identifier
+                props.prev_node_name = active_node.name
+                props.prev_socket_identifier = main_output.identifier
+
 
         final_output_socket = output_node.inputs[0]
         layer_column = layout.column(align=True)
@@ -91,6 +101,8 @@ def draw_node_settings(layout, node_group, node, context):
             continue
         row = layout.row()
         socket.draw(context, row, node, socket.name)
+        subrow = row.row()
+        subrow.enabled = len(socket.links) == 0
         props = row.operator("node_layers.add_node_layer", text="", icon='DECORATE_DRIVER')
         props.group_name = node_group.name
         props.next_node_name = node.name
@@ -114,9 +126,13 @@ class AddNodeLayerOperator(bpy.types.Operator):
         ("GeometryNodeTransform", "Transform", ""),
     ])
 
-    group_name: StringProperty()
-    next_node_name: StringProperty()
-    next_socket_identifier: StringProperty()
+    group_name: StringProperty(options={'SKIP_SAVE'})
+
+    next_node_name: StringProperty(options={'SKIP_SAVE'})
+    next_socket_identifier: StringProperty(options={'SKIP_SAVE'})
+
+    prev_node_name: StringProperty(options={'SKIP_SAVE'})
+    prev_socket_identifier: StringProperty(options={'SKIP_SAVE'})
 
     def invoke(self, context, event):
         context.window_manager.invoke_search_popup(self)
@@ -127,12 +143,11 @@ class AddNodeLayerOperator(bpy.types.Operator):
             return {'CANCELLED'}
         if (next_node := node_group.nodes.get(self.next_node_name)) is None:
             return {'CANCELLED'}
-        for socket in next_node.inputs:
-            if socket.identifier == self.next_socket_identifier:
-                next_socket = socket
-                break
-        else:
+        if (next_socket := find_socket_by_identifier(next_node.inputs, self.next_socket_identifier)) is None:
             return {'CANCELLED'}
+
+        if prev_node := node_group.nodes.get(self.prev_node_name):
+            prev_socket = find_socket_by_identifier(prev_node.outputs, self.prev_socket_identifier)
 
         new_node_idname = self.item
 
@@ -140,42 +155,55 @@ class AddNodeLayerOperator(bpy.types.Operator):
         new_node.location = next_node.location
         next_node.location.x += 200
 
-        links_to_replace = [link for link in next_socket.links if not link.to_socket.is_multi_input]
-        origin_sockets = [link.from_socket for link in links_to_replace]
-        for link in links_to_replace:
-            node_group.links.remove(link)
-
-        for socket in new_node.outputs:
-            if socket.enabled:
-                main_output = socket
-                break
-        else:
-            return {'CANCELLED'}
-
-        main_input = find_main_input(new_node, main_output)
-        if main_input is not None:
-            for origin_socket in origin_sockets:
-                node_group.links.new(main_input, origin_socket)
-        node_group.links.new(next_socket, main_output)
-
         for node in node_group.nodes:
             node.select = False
         node_group.nodes.active = new_node
         new_node.select = True
 
+        if (main_output := find_main_output(new_node)) is None:
+            return {'CANCELLED'}
+
+        main_input = find_main_input(new_node, main_output)
+
+        if prev_node is None:
+            if not next_socket.is_multi_input:
+                old_links = list(next_socket.links)
+                assert len(old_links) <= 1
+                if len(old_links) == 1:
+                    old_link = old_links[0]
+                    origin_socket = old_link.from_socket
+                    node_group.links.remove(old_link)
+                    if main_input is not None:
+                        node_group.links.new(main_input, origin_socket)
+            node_group.links.new(next_socket, main_output)
+        else:
+            for link in node_group.links:
+                if link.from_socket == prev_socket and link.to_socket == next_socket:
+                    node_group.links.remove(link)
+                    break
+            node_group.links.new(next_socket, main_output)
+            if main_input is not None:
+                node_group.links.new(main_input, prev_socket)
+
         return {'FINISHED'}
+
+def find_socket_by_identifier(sockets, identifier):
+    for socket in sockets:
+        if socket.identifier == identifier:
+            return socket
+    return None
 
 class RemoveNodeLayerOperator(bpy.types.Operator):
     bl_idname = "node_layers.remove_node_layer"
     bl_label = "Remove Node Layer"
     bl_options = {'UNDO'}
 
-    group_name: StringProperty()
-    node_name: StringProperty()
-    output_socket_identifier: StringProperty()
+    group_name: StringProperty(options={'SKIP_SAVE'})
+    node_name: StringProperty(options={'SKIP_SAVE'})
+    output_socket_identifier: StringProperty(options={'SKIP_SAVE'})
 
-    target_node_name: StringProperty()
-    target_socket_identifier: StringProperty()
+    target_node_name: StringProperty(options={'SKIP_SAVE'})
+    target_socket_identifier: StringProperty(options={'SKIP_SAVE'})
 
     def execute(self, context):
         if (node_group := bpy.data.node_groups.get(self.group_name)) is None:
@@ -213,8 +241,8 @@ class MakeNodeActiveOperator(bpy.types.Operator):
     bl_idname = "node_layers.make_node_active"
     bl_label = "Make Node Active"
 
-    group_name: StringProperty()
-    node_name: StringProperty()
+    group_name: StringProperty(options={'SKIP_SAVE'})
+    node_name: StringProperty(options={'SKIP_SAVE'})
 
     def execute(self, context):
         if not (node_group := bpy.data.node_groups.get(self.group_name)):
@@ -298,6 +326,12 @@ def draw_layer__output(layer_column, indentation, node_group, output_socket, tar
 
 def is_geometry_socket(socket):
     return socket.bl_idname == 'NodeSocketGeometry'
+
+def find_main_output(node):
+    for socket in node.outputs:
+        if socket.enabled:
+            return socket
+    return None
 
 def find_main_input(node, output_socket):
     output_is_geometry = is_geometry_socket(output_socket)
