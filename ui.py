@@ -50,6 +50,8 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
     bl_context = "modifier"
     bl_label = "Settings"
 
+    node_history = []
+
     @classmethod
     def poll(cls, context):
         return context.object and context.object.type == 'MESH'
@@ -64,11 +66,22 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
         if not (active_node := node_group.nodes.active):
             return
 
-        active_node.draw_buttons(context, layout)
-        for socket in active_node.inputs:
-            if not socket.enabled:
-                continue
-            socket.draw(context, layout, active_node, socket.name)
+        active_node_name = active_node.name
+        if active_node_name in self.node_history:
+            self.node_history.remove(active_node_name)
+        self.node_history.insert(0, active_node_name)
+        del self.node_history[5:]
+
+        for node_name in self.node_history:
+            box = layout.box()
+            node = node_group.nodes[node_name]
+            box.label(text=f"Node: {node_name}")
+            node.draw_buttons(context, box)
+            for socket in node.inputs:
+                if not socket.enabled:
+                    continue
+                socket.draw(context, box, node, socket.name)
+
 
 class AddNodeLayerOperator(bpy.types.Operator):
     bl_idname = "node_layers.add_node_layer"
