@@ -81,7 +81,12 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
             for socket in node.inputs:
                 if not socket.enabled:
                     continue
-                socket.draw(context, box, node, socket.name)
+                row = box.row()
+                socket.draw(context, row, node, socket.name)
+                props = row.operator("node_layers.add_node_layer", text="", icon='DECORATE_DRIVER')
+                props.group_name = node_group.name
+                props.next_node_name = node.name
+                props.next_socket_identifier = socket.identifier
 
 
 class AddNodeLayerOperator(bpy.types.Operator):
@@ -96,6 +101,7 @@ class AddNodeLayerOperator(bpy.types.Operator):
         ("GeometryNodeMeshCube", "Cube", ""),
         ("GeometryNodeMeshCylinder", "Cylinder", ""),
         ("GeometryNodeInstanceOnPoints", "Instance on Points", ""),
+        ("FunctionNodeRandomValue", "Random Value", ""),
     ])
 
     group_name: StringProperty()
