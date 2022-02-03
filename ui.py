@@ -121,6 +121,11 @@ class AddNodeLayerOperator(bpy.types.Operator):
             node_group.links.new(main_input, origin_socket)
         node_group.links.new(next_socket, main_output)
 
+        for node in node_group.nodes:
+            node.select = False
+        node_group.nodes.active = new_node
+        new_node.select = True
+
         return {'FINISHED'}
 
 class MakeNodeActiveOperator(bpy.types.Operator):
