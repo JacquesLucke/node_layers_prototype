@@ -128,6 +128,50 @@ class AddNodeLayerOperator(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class RemoveNodeLayerOperator(bpy.types.Operator):
+    bl_idname = "node_layers.remove_node_layer"
+    bl_label = "Remove Node Layer"
+    bl_options = {'UNDO'}
+
+    group_name: StringProperty()
+    node_name: StringProperty()
+    output_socket_identifier: StringProperty()
+
+    target_node_name: StringProperty()
+    target_socket_identifier: StringProperty()
+
+    def execute(self, context):
+        if (node_group := bpy.data.node_groups.get(self.group_name)) is None:
+            return {'CANCELLED'}
+        if (node := node_group.nodes.get(self.node_name)) is None:
+            return {'CANCELLED'}
+        for socket in node.outputs:
+            if socket.identifier == self.output_socket_identifier:
+                output_socket = socket
+                break
+        else:
+            return {'CANCELLED'}
+        if (target_node := node_group.nodes.get(self.target_node_name)) is None:
+            return {'CANCELLED'}
+        for socket in target_node.inputs:
+            if socket.identifier == self.target_socket_identifier:
+                target_socket = socket
+                break
+        else:
+            return {'CANCELLED'}
+
+        for link in node_group.links:
+            if link.from_socket == output_socket and link.to_socket == target_socket:
+                node_group.links.remove(link)
+                break
+
+        main_input = find_main_input(node, output_socket)
+        if main_input is not None:
+            for link in main_input.links:
+                node_group.links.new(target_socket, link.from_socket)
+
+        return {'FINISHED'}
+
 class MakeNodeActiveOperator(bpy.types.Operator):
     bl_idname = "node_layers.make_node_active"
     bl_label = "Make Node Active"
@@ -152,9 +196,9 @@ def draw_layer__single_input(layer_column, indentation, node_group, input_socket
         return
 
     origin_socket = links[0].from_socket
-    draw_layer__output(layer_column, indentation, node_group, origin_socket)
+    draw_layer__output(layer_column, indentation, node_group, origin_socket, input_socket)
 
-def draw_layer__output(layer_column, indentation, node_group, output_socket):
+def draw_layer__output(layer_column, indentation, node_group, output_socket, target_socket):
     node = output_socket.node
     is_active = node == node_group.nodes.active
 
@@ -170,7 +214,12 @@ def draw_layer__output(layer_column, indentation, node_group, output_socket):
 
     right_row = layer_row.row()
     right_row.alignment = 'RIGHT'
-    right_row.label(icon='DOT')
+    props = right_row.operator("node_layers.remove_node_layer", text="", icon='X', emboss=False)
+    props.group_name = node_group.name
+    props.node_name = node.name
+    props.output_socket_identifier = output_socket.identifier
+    props.target_node_name = target_socket.node.name
+    props.target_socket_identifier = target_socket.identifier
 
     if len(node.inputs) == 0:
         return
@@ -186,7 +235,7 @@ def draw_layer__output(layer_column, indentation, node_group, output_socket):
                 # Might not actually the first link. The sorting info is not exposed yet.
                 main_origin = main_input_links[0].from_socket
                 for i, link in enumerate(main_input_links[1:], start=1):
-                    sub_inputs.append((f"Join {i}", link.from_socket))
+                    sub_inputs.append((f"Join {i}", main_input, link.from_socket))
             else:
                 main_origin = main_input_links[0].from_socket
 
@@ -198,17 +247,17 @@ def draw_layer__output(layer_column, indentation, node_group, output_socket):
         input_links = input_socket.links
         if len(input_links) == 0:
             continue
-        sub_inputs.append((input_socket.name, input_links[0].from_socket))
+        sub_inputs.append((input_socket.name, input_socket, input_links[0].from_socket))
 
     sub_indentation = indentation + 1
-    for name, origin_socket in sub_inputs:
+    for name, input_socket, origin_socket in sub_inputs:
         row = layer_column.row()
         add_indentation(row, sub_indentation)
         row.label(text=f"{name}:")
-        draw_layer__output(layer_column, sub_indentation, node_group, origin_socket)
+        draw_layer__output(layer_column, sub_indentation, node_group, origin_socket, input_socket)
 
     if main_origin is not None:
-        draw_layer__output(layer_column, indentation, node_group, main_origin)
+        draw_layer__output(layer_column, indentation, node_group, main_origin, main_input)
 
 def is_geometry_socket(socket):
     return socket.bl_idname == 'NodeSocketGeometry'
