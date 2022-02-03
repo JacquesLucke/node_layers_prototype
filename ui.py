@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import *
+from bpy.props import StringProperty
 
 def find_geometry_node_group(ob):
     for modifier in ob.modifiers:
