@@ -72,21 +72,29 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
         # Limit node history length.
         del self.node_history[5:]
 
-        for node_name in self.node_history:
-            if (node := node_group.nodes.get(node_name)) is None:
-                continue
-            box = layout.box()
-            box.label(text=f"Node: {node_name}")
-            node.draw_buttons(context, box)
-            for socket in node.inputs:
-                if not socket.enabled:
+        use_node_history = False
+        if use_node_history:
+            for node_name in self.node_history:
+                if (node := node_group.nodes.get(node_name)) is None:
                     continue
-                row = box.row()
-                socket.draw(context, row, node, socket.name)
-                props = row.operator("node_layers.add_node_layer", text="", icon='DECORATE_DRIVER')
-                props.group_name = node_group.name
-                props.next_node_name = node.name
-                props.next_socket_identifier = socket.identifier
+                box = layout.box()
+                box.label(text=f"Node: {node_name}")
+                draw_node_settings(box, node_group, node, context)
+        else:
+            draw_node_settings(layout, node_group, active_node, context)
+
+
+def draw_node_settings(layout, node_group, node, context):
+    node.draw_buttons(context, layout)
+    for socket in node.inputs:
+        if not socket.enabled:
+            continue
+        row = layout.row()
+        socket.draw(context, row, node, socket.name)
+        props = row.operator("node_layers.add_node_layer", text="", icon='DECORATE_DRIVER')
+        props.group_name = node_group.name
+        props.next_node_name = node.name
+        props.next_socket_identifier = socket.identifier
 
 
 class AddNodeLayerOperator(bpy.types.Operator):
@@ -103,6 +111,7 @@ class AddNodeLayerOperator(bpy.types.Operator):
         ("GeometryNodeInstanceOnPoints", "Instance on Points", ""),
         ("FunctionNodeRandomValue", "Random Value", ""),
         ("GeometryNodeJoinGeometry", "Join Geometry", ""),
+        ("GeometryNodeTransform", "Transform", ""),
     ])
 
     group_name: StringProperty()
