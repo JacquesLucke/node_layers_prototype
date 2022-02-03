@@ -109,24 +109,52 @@ def draw_layer__output(layer_column, indentation, node_group, output_socket):
     if len(node.inputs) == 0:
         return
 
-    main_input = node.inputs[0]
-    if main_input.bl_idname != 'NodeSocketGeometry':
-        return
+    main_origin = None
+    sub_inputs = []
 
-    if main_input.is_multi_input:
-        draw_layer__multi_input(layer_column, indentation, node_group, main_input)
-    else:
-        draw_layer__single_input(layer_column, indentation, node_group, main_input)
+    main_input = find_main_input(node, output_socket)
+    if main_input is not None:
+        main_input_links = main_input.links
+        if len(main_input_links) > 0:
+            if main_input.is_multi_input:
+                # Might not actually the first link. The sorting info is not exposed yet.
+                main_origin = main_input_links[0].from_socket
+                for i, link in enumerate(main_input_links[1:], start=1):
+                    sub_inputs.append((f"Join {i}", link.from_socket))
+            else:
+                main_origin = main_input_links[0].from_socket
 
-def draw_layer__multi_input(layer_column, indentation, node_group, input_socket):
+    for input_socket in node.inputs:
+        if input_socket == main_input:
+            continue
+        if not input_socket.enabled:
+            continue
+        input_links = input_socket.links
+        if len(input_links) == 0:
+            continue
+        sub_inputs.append((input_socket.name, input_links[0].from_socket))
+
     sub_indentation = indentation + 1
-    links = input_socket.links
-    for i, link in enumerate(links):
+    for name, origin_socket in sub_inputs:
         row = layer_column.row()
         add_indentation(row, sub_indentation)
-        row.label(text=f"Input {i + 1}:")
-        origin_socket = link.from_socket
+        row.label(text=f"{name}:")
         draw_layer__output(layer_column, sub_indentation, node_group, origin_socket)
+
+    if main_origin is not None:
+        draw_layer__output(layer_column, indentation, node_group, main_origin)
+
+def is_geometry_socket(socket):
+    return socket.bl_idname == 'NodeSocketGeometry'
+
+def find_main_input(node, output_socket):
+    output_is_geometry = is_geometry_socket(output_socket)
+    for input_socket in node.inputs:
+        if output_is_geometry and not is_geometry_socket(input_socket):
+            continue
+        if input_socket.enabled:
+            return input_socket
+    return None
 
 
 def add_indentation(row, indentation):
