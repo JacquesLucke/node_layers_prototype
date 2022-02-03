@@ -70,11 +70,13 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
         if active_node_name in self.node_history:
             self.node_history.remove(active_node_name)
         self.node_history.insert(0, active_node_name)
+        # Limit node history length.
         del self.node_history[5:]
 
         for node_name in self.node_history:
             box = layout.box()
-            node = node_group.nodes[node_name]
+            if (node := node_group.nodes.get(node_name)) is None:
+                continue
             box.label(text=f"Node: {node_name}")
             node.draw_buttons(context, box)
             for socket in node.inputs:
@@ -114,8 +116,13 @@ class AddNodeLayerOperator(bpy.types.Operator):
         for link in links_to_replace:
             node_group.links.remove(link)
 
-        main_input = new_node.inputs[0]
-        main_output = new_node.outputs[0]
+        for socket in new_node.outputs:
+            if socket.enabled:
+                main_output = socket
+                break
+        else:
+            return {'CANCELLED'}
+        main_input = find_main_input(new_node, main_output)
 
         for origin_socket in origin_sockets:
             node_group.links.new(main_input, origin_socket)
