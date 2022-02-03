@@ -22,7 +22,7 @@ class ModifierLayersPanel(bpy.types.Panel):
         layout = self.layout
         ob = context.object
 
-        if not (node_group := find_geometry_node_group(ob)):
+        if (node_group := find_geometry_node_group(ob)) is None:
             return
 
         output_node = None
@@ -32,6 +32,12 @@ class ModifierLayersPanel(bpy.types.Panel):
                 break
         else:
             return
+
+        props = layout.operator("node_layers.add_node_layer")
+        props.group_name = node_group.name
+        props.next_node_name = output_node.name
+        props.next_socket_identifier = output_node.inputs[0].identifier
+        props.new_node_idname = "GeometryNodeSubdivisionSurface"
 
         final_output_socket = output_node.inputs[0]
         layer_column = layout.column(align=True)
@@ -60,7 +66,49 @@ class ModifierLayerSettingsPanel(bpy.types.Panel):
 
         active_node.draw_buttons(context, layout)
         for socket in active_node.inputs:
+            if not socket.enabled:
+                continue
             socket.draw(context, layout, active_node, socket.name)
+
+class AddNodeLayerOperator(bpy.types.Operator):
+    bl_idname = "node_layers.add_node_layer"
+    bl_label = "Add Node Layer"
+
+    group_name: StringProperty()
+    next_node_name: StringProperty()
+    next_socket_identifier: StringProperty()
+
+    new_node_idname: StringProperty()
+
+    def execute(self, context):
+        if (node_group := bpy.data.node_groups.get(self.group_name)) is None:
+            return {'CANCELLED'}
+        if (next_node := node_group.nodes.get(self.next_node_name)) is None:
+            return {'CANCELLED'}
+        for socket in next_node.inputs:
+            if socket.identifier == self.next_socket_identifier:
+                next_socket = socket
+                break
+        else:
+            return {'CANCELLED'}
+
+        new_node = node_group.nodes.new(self.new_node_idname)
+        new_node.location = next_node.location
+        next_node.location.x += 200
+
+        links_to_replace = list(next_socket.links)
+        origin_sockets = [link.from_socket for link in links_to_replace]
+        for link in links_to_replace:
+            node_group.links.remove(link)
+
+        main_input = new_node.inputs[0]
+        main_output = new_node.outputs[0]
+
+        for origin_socket in origin_sockets:
+            node_group.links.new(main_input, origin_socket)
+        node_group.links.new(next_socket, main_output)
+
+        return {'FINISHED'}
 
 class MakeNodeActiveOperator(bpy.types.Operator):
     bl_idname = "node_layers.make_node_active"
