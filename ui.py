@@ -1,4 +1,3 @@
-from json.tool import main
 import bpy
 from bpy.props import *
 
@@ -35,7 +34,8 @@ class ModifierLayersPanel(bpy.types.Panel):
             return
 
         final_output_socket = output_node.inputs[0]
-        draw_layers_for_single_input(layout, node_group, final_output_socket)
+        layer_column = layout.column(align=True)
+        draw_layer__single_input(layer_column, 0, node_group, final_output_socket)
 
 class ModifierLayerSettingsPanel(bpy.types.Panel):
     bl_idname = "NODE_LAYERS_PT_node_settings"
@@ -80,27 +80,31 @@ class MakeNodeActiveOperator(bpy.types.Operator):
         newly_active_node.select = True
         return {'FINISHED'}
 
-
-def draw_layers_for_single_input(layout, node_group, input_socket):
+def draw_layer__single_input(layer_column, indentation, node_group, input_socket):
     links = input_socket.links
     if len(links) == 0:
         return
 
     origin_socket = links[0].from_socket
-    draw_layers_for_output(layout, node_group, origin_socket)
+    draw_layer__output(layer_column, indentation, node_group, origin_socket)
 
-
-def draw_layers_for_output(layout, node_group, output_socket):
+def draw_layer__output(layer_column, indentation, node_group, output_socket):
     node = output_socket.node
     is_active = node == node_group.nodes.active
 
-    main_row = layout.row()
-    name_row = main_row.row(align=False)
-    name_row.alignment = 'LEFT'
-    name_row.prop(node, "mute", text="", icon='CHECKBOX_DEHLT' if node.mute else 'CHECKBOX_HLT', emboss=is_active)
-    props = name_row.operator("node_layers.make_node_active", text=node.name, emboss=False)
+    layer_row = layer_column.row()
+    add_indentation(layer_row, indentation)
+
+    left_row = layer_row.row()
+    left_row.alignment = 'LEFT'
+    left_row.prop(node, "mute", text="", icon='CHECKBOX_DEHLT' if node.mute else 'CHECKBOX_HLT', emboss=is_active)
+    props = left_row.operator("node_layers.make_node_active", text=node.name, emboss=False)
     props.group_name = node_group.name
     props.node_name = node.name
+
+    right_row = layer_row.row()
+    right_row.alignment = 'RIGHT'
+    right_row.label(icon='DOT')
 
     if len(node.inputs) == 0:
         return
@@ -109,22 +113,25 @@ def draw_layers_for_output(layout, node_group, output_socket):
     if main_input.bl_idname != 'NodeSocketGeometry':
         return
 
-    if not main_input.is_multi_input:
-        draw_layers_for_single_input(layout, node_group, main_input)
-        return
+    if main_input.is_multi_input:
+        draw_layer__multi_input(layer_column, indentation, node_group, main_input)
+    else:
+        draw_layer__single_input(layer_column, indentation, node_group, main_input)
 
-    row = layout.row(align=True)
-    row.label(text="", icon='BLANK1')
-    draw_layers_for_multi_input(row, node_group, main_input)
-
-
-def draw_layers_for_multi_input(layout, node_group, input_socket):
-    col = layout.column()
+def draw_layer__multi_input(layer_column, indentation, node_group, input_socket):
+    sub_indentation = indentation + 1
     links = input_socket.links
-    for link in links:
+    for i, link in enumerate(links):
+        row = layer_column.row()
+        add_indentation(row, sub_indentation)
+        row.label(text=f"Input {i + 1}:")
         origin_socket = link.from_socket
-        draw_layers_for_output(col, node_group, origin_socket)
-        if link != links[-1]:
-            subcol = col.column(align=True)
-            subcol.scale_y = 0.4
-            subcol.separator()
+        draw_layer__output(layer_column, sub_indentation, node_group, origin_socket)
+
+
+def add_indentation(row, indentation):
+    subrow = row.row(align=True)
+    subrow.scale_x = 0.0001 if indentation == 0 else 0.6
+    for _ in range(max(1, indentation)):
+        # subrow.label(icon='X')
+        subrow.label(icon='BLANK1')
