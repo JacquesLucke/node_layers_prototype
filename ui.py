@@ -102,6 +102,7 @@ class AddNodeLayerOperator(bpy.types.Operator):
         ("GeometryNodeMeshCylinder", "Cylinder", ""),
         ("GeometryNodeInstanceOnPoints", "Instance on Points", ""),
         ("FunctionNodeRandomValue", "Random Value", ""),
+        ("GeometryNodeJoinGeometry", "Join Geometry", ""),
     ])
 
     group_name: StringProperty()
@@ -130,7 +131,7 @@ class AddNodeLayerOperator(bpy.types.Operator):
         new_node.location = next_node.location
         next_node.location.x += 200
 
-        links_to_replace = list(next_socket.links)
+        links_to_replace = [link for link in next_socket.links if not link.to_socket.is_multi_input]
         origin_sockets = [link.from_socket for link in links_to_replace]
         for link in links_to_replace:
             node_group.links.remove(link)
