@@ -124,6 +124,7 @@ class AddNodeLayerOperator(bpy.types.Operator):
         ("FunctionNodeRandomValue", "Random Value", ""),
         ("GeometryNodeJoinGeometry", "Join Geometry", ""),
         ("GeometryNodeTransform", "Transform", ""),
+        ("GeometryNodeRealizeInstances", "Realize Instances", ""),
     ])
 
     group_name: StringProperty(options={'SKIP_SAVE'})
